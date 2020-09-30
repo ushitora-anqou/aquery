@@ -208,8 +208,13 @@ func main() {
 	for _, gi := range mSlice {
 		// Format calltrace
 		traces := []string{}
-		for i, f := range gi.calltrace {
-			traces = append(traces, fmt.Sprintf("%02d:%s", i, f))
+		switch *optGroupBy {
+		case "full":
+			for i, f := range gi.calltrace {
+				traces = append(traces, fmt.Sprintf("%02d:%s", i, f))
+			}
+		default: // top
+			traces = append(traces, gi.calltrace[0])
 		}
 
 		table.Append([]string{
