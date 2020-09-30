@@ -25,7 +25,7 @@ type rawInfo struct {
 type groupedInfo struct {
 	calltrace []string
 
-	kind                                  map[string]struct{}
+	kind, desc                            map[string]struct{}
 	count                                 int64
 	minDuration, maxDuration, sumDuration int64 // in nanosecond
 }
@@ -162,8 +162,11 @@ func main() {
 		key := getKeyForGroupedInfoMap(*ri, *optGroupBy)
 		d := ri.duration.Nanoseconds()
 		if gi, ok := m[key]; ok {
-			gi.kind[ri.kind] = struct{}{}
 			gi.count++
+			gi.kind[ri.kind[0:2]] = struct{}{}
+			if ri.desc != "" {
+				gi.desc[ri.desc] = struct{}{}
+			}
 
 			gi.sumDuration += d
 			if d < gi.minDuration {
@@ -173,8 +176,15 @@ func main() {
 				gi.maxDuration = d
 			}
 		} else {
+			kind := make(map[string]struct{})
+			desc := make(map[string]struct{})
+			kind[ri.kind[0:2]] = struct{}{}
+			if ri.desc != "" {
+				desc[ri.desc] = struct{}{}
+			}
 			m[key] = &groupedInfo{
-				kind:        map[string]struct{}{ri.kind: struct{}{}},
+				kind:        kind,
+				desc:        desc,
 				calltrace:   ri.calltrace,
 				count:       1,
 				sumDuration: d,
@@ -208,7 +218,7 @@ func main() {
 
 	// Print
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"COUNT", "MIN", "MAX", "SUM", "AVG", "K", "CALLTRACE"})
+	table.SetHeader([]string{"COUNT", "MIN", "MAX", "SUM", "AVG", "K", "CALLTRACE", "DESC"})
 	for _, gi := range mSlice {
 		// Format kind
 		kind := []string{}
@@ -216,6 +226,13 @@ func main() {
 			kind = append(kind, k)
 		}
 		sort.Sort(stringBy(kind))
+
+		// Format desc
+		desc := []string{}
+		for k := range gi.desc {
+			desc = append(desc, k)
+		}
+		sort.Sort(stringBy(desc))
 
 		// Format calltrace
 		traces := []string{}
@@ -236,6 +253,7 @@ func main() {
 			fmt.Sprintf("%.3f", float64(gi.sumDuration/gi.count)/1000000000.0),
 			strings.Join(kind, ","),
 			strings.Join(traces, "\n"),
+			strings.Join(desc, "\n"),
 		})
 	}
 	table.Render()
