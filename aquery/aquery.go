@@ -46,12 +46,18 @@ func (s *groupedInfoSorter) Len() int           { return len(s.gis) }
 func (s *groupedInfoSorter) Swap(i, j int)      { s.gis[i], s.gis[j] = s.gis[j], s.gis[i] }
 func (s *groupedInfoSorter) Less(i, j int) bool { return s.by(s.gis[i], s.gis[j]) }
 
-func getKeyForGroupedInfoMap(ri rawInfo) string {
-	return strings.Join(append(ri.calltrace, ri.kind, ri.desc), "")
+func getKeyForGroupedInfoMap(ri rawInfo, opt string) string {
+	switch opt {
+	case "full":
+		return strings.Join(append(ri.calltrace, ri.kind, ri.desc), "")
+	default: // top
+		return strings.Join([]string{ri.calltrace[0], ri.kind, ri.desc}, "")
+	}
 }
 
 func main() {
 	var (
+		optGroupBy        = flag.String("group", "top", "Group by [top|full] of calltrace")
 		optSortBy         = flag.String("sort", "sum", "Sort by [count|min|max|sum|avg]")
 		optCallstackRegex = flag.String("match-callstack", ".*", "Regex to match callstack with")
 	)
@@ -147,7 +153,7 @@ func main() {
 	// Group by callstack
 	m := make(map[string]*groupedInfo)
 	for _, ri := range raw {
-		key := getKeyForGroupedInfoMap(*ri)
+		key := getKeyForGroupedInfoMap(*ri, *optGroupBy)
 		d := ri.duration.Nanoseconds()
 		if gi, ok := m[key]; ok {
 			// Assume gi.kind == ri.kind &&
