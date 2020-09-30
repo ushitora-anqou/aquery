@@ -23,12 +23,18 @@ type rawInfo struct {
 }
 
 type groupedInfo struct {
-	kind, desc string
-	calltrace  []string
+	calltrace []string
 
+	kind                                  map[string]struct{}
 	count                                 int64
 	minDuration, maxDuration, sumDuration int64 // in nanosecond
 }
+
+type stringBy []string
+
+func (b stringBy) Len() int           { return len(b) }
+func (b stringBy) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b stringBy) Less(i, j int) bool { return b[i] < b[j] }
 
 type by func(gi1, gi2 *groupedInfo) bool
 
@@ -49,9 +55,9 @@ func (s *groupedInfoSorter) Less(i, j int) bool { return s.by(s.gis[i], s.gis[j]
 func getKeyForGroupedInfoMap(ri rawInfo, opt string) string {
 	switch opt {
 	case "full":
-		return strings.Join(append(ri.calltrace, ri.kind, ri.desc), "")
+		return strings.Join(append(ri.calltrace), "")
 	default: // top
-		return strings.Join([]string{ri.calltrace[0], ri.kind, ri.desc}, "")
+		return strings.Join([]string{ri.calltrace[0]}, "")
 	}
 }
 
@@ -156,8 +162,7 @@ func main() {
 		key := getKeyForGroupedInfoMap(*ri, *optGroupBy)
 		d := ri.duration.Nanoseconds()
 		if gi, ok := m[key]; ok {
-			// Assume gi.kind == ri.kind &&
-			//        gi.desc == ri.desc && gi.calltrace == ri.calltrace
+			gi.kind[ri.kind] = struct{}{}
 			gi.count++
 
 			gi.sumDuration += d
@@ -169,8 +174,7 @@ func main() {
 			}
 		} else {
 			m[key] = &groupedInfo{
-				kind:        ri.kind,
-				desc:        ri.desc,
+				kind:        map[string]struct{}{ri.kind: struct{}{}},
 				calltrace:   ri.calltrace,
 				count:       1,
 				sumDuration: d,
@@ -204,8 +208,15 @@ func main() {
 
 	// Print
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"COUNT", "MIN", "MAX", "SUM", "AVG", "K", "DESC", "CALLTRACE"})
+	table.SetHeader([]string{"COUNT", "MIN", "MAX", "SUM", "AVG", "K", "CALLTRACE"})
 	for _, gi := range mSlice {
+		// Format kind
+		kind := []string{}
+		for k := range gi.kind {
+			kind = append(kind, k)
+		}
+		sort.Sort(stringBy(kind))
+
 		// Format calltrace
 		traces := []string{}
 		switch *optGroupBy {
@@ -223,8 +234,7 @@ func main() {
 			fmt.Sprintf("%.3f", float64(gi.maxDuration)/1000000000.0),
 			fmt.Sprintf("%.3f", float64(gi.sumDuration)/1000000000.0),
 			fmt.Sprintf("%.3f", float64(gi.sumDuration/gi.count)/1000000000.0),
-			gi.kind[0:2],
-			gi.desc,
+			strings.Join(kind, ","),
 			strings.Join(traces, "\n"),
 		})
 	}
