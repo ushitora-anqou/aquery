@@ -61,6 +61,19 @@ func getKeyForGroupedInfoMap(ri rawInfo, opt string) string {
 	}
 }
 
+func getDesc(ri rawInfo) string {
+	switch ri.kind {
+	case "Commit":
+		return "COMMIT"
+	case "Begin":
+		return "BEGIN"
+	case "Rollback":
+		return "ROLLBACK"
+	default:
+		return ri.desc
+	}
+}
+
 func main() {
 	var (
 		optGroupBy        = flag.String("group", "top", "Group by [top|full] of calltrace")
@@ -162,11 +175,12 @@ func main() {
 	for _, ri := range raw {
 		key := getKeyForGroupedInfoMap(*ri, *optGroupBy)
 		d := ri.duration.Nanoseconds()
+		desc := getDesc(*ri)
 		if gi, ok := m[key]; ok {
 			gi.count++
 			gi.kind[ri.kind[0:2]] = struct{}{}
-			if ri.desc != "" {
-				gi.desc[ri.desc] = struct{}{}
+			if desc != "" {
+				gi.desc[desc] = struct{}{}
 			}
 
 			gi.sumDuration += d
@@ -177,15 +191,15 @@ func main() {
 				gi.maxDuration = d
 			}
 		} else {
-			kind := make(map[string]struct{})
-			desc := make(map[string]struct{})
-			kind[ri.kind[0:2]] = struct{}{}
-			if ri.desc != "" {
-				desc[ri.desc] = struct{}{}
+			mKind := make(map[string]struct{})
+			mDesc := make(map[string]struct{})
+			mKind[ri.kind[0:2]] = struct{}{}
+			if desc != "" {
+				mDesc[desc] = struct{}{}
 			}
 			m[key] = &groupedInfo{
-				kind:        kind,
-				desc:        desc,
+				kind:        mKind,
+				desc:        mDesc,
 				calltrace:   ri.calltrace,
 				count:       1,
 				sumDuration: d,
