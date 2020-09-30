@@ -55,7 +55,7 @@ func (s *groupedInfoSorter) Less(i, j int) bool { return s.by(s.gis[i], s.gis[j]
 func getKeyForGroupedInfoMap(ri rawInfo, opt string) string {
 	switch opt {
 	case "full":
-		return strings.Join(append(ri.calltrace), "")
+		return strings.Join(append(ri.calltrace, ri.kind), "")
 	default: // top
 		return strings.Join([]string{ri.calltrace[0]}, "")
 	}
