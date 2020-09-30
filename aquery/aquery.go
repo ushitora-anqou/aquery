@@ -66,6 +66,7 @@ func main() {
 		optGroupBy        = flag.String("group", "top", "Group by [top|full] of calltrace")
 		optSortBy         = flag.String("sort", "sum", "Sort by [count|min|max|sum|avg]")
 		optCallstackRegex = flag.String("match-callstack", ".*", "Regex to match callstack with")
+		optColWidth       = flag.Int("col", tablewriter.MAX_ROW_WIDTH, "Column width")
 	)
 	flag.Parse()
 	if len(flag.Args()) != 1 {
@@ -219,6 +220,7 @@ func main() {
 	// Print
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"COUNT", "MIN", "MAX", "SUM", "AVG", "K", "CALLTRACE", "DESC"})
+	table.SetColWidth(*optColWidth)
 	for _, gi := range mSlice {
 		// Format kind
 		kind := []string{}
