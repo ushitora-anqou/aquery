@@ -229,6 +229,7 @@ func RegisterTracer(thresholdSlowQuery time.Duration) http.Handler {
 		zw := gzip.NewWriter(w)
 		defer zw.Close()
 
+		// Thanks to: https://github.com/felixge/fgprof
 		var seconds int
 		var err error
 		if s := r.URL.Query().Get("seconds"); s == "" {
