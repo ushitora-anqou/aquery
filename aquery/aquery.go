@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -78,6 +79,10 @@ func getDesc(ri rawInfo) string {
 	}
 }
 
+func getShortFilePath(src string) string {
+	return filepath.Base(src)
+}
+
 func main() {
 	var (
 		optGroupBy           = flag.String("group", "top", "Group by [topct|topct+kind|fullct|fullct+kind]")
@@ -85,6 +90,7 @@ func main() {
 		optCalltraceRegex    = flag.String("match-ct", ".*", "Regex to match calltrace with")
 		optInvCalltraceRegex = flag.String("inv-match-ct", "^$", "Regex to invertedly match calltrace with, that is, not-matching frames will be shown")
 		optColWidth          = flag.Int("col", tablewriter.MAX_ROW_WIDTH, "Column width")
+		optShortCalltrace    = flag.Bool("short-ct", false, "Show short file path for calltrace")
 	)
 	flag.Parse()
 	if len(flag.Args()) != 1 {
@@ -259,16 +265,19 @@ func main() {
 		// Format calltrace
 		traces := []string{}
 		switch *optGroupBy {
-		case "fullct":
+		case "fullct", "fullct+kind":
 			for i, f := range gi.calltrace {
-				traces = append(traces, fmt.Sprintf("%02d:%s", i, f))
-			}
-		case "fullct+kind":
-			for i, f := range gi.calltrace {
+				if *optShortCalltrace {
+					f = getShortFilePath(f)
+				}
 				traces = append(traces, fmt.Sprintf("%02d:%s", i, f))
 			}
 		default: // topct, topct+kind
-			traces = append(traces, gi.calltrace[0])
+			f := gi.calltrace[0]
+			if *optShortCalltrace {
+				f = getShortFilePath(f)
+			}
+			traces = append(traces, f)
 		}
 
 		table.Append([]string{
