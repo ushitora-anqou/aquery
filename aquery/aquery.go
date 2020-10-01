@@ -80,10 +80,11 @@ func getDesc(ri rawInfo) string {
 
 func main() {
 	var (
-		optGroupBy        = flag.String("group", "top", "Group by [topct|topct+kind|fullct|fullct+kind]")
-		optSortBy         = flag.String("sort", "sum", "Sort by [count|min|max|sum|avg]")
-		optCallstackRegex = flag.String("match-callstack", ".*", "Regex to match callstack with")
-		optColWidth       = flag.Int("col", tablewriter.MAX_ROW_WIDTH, "Column width")
+		optGroupBy           = flag.String("group", "top", "Group by [topct|topct+kind|fullct|fullct+kind]")
+		optSortBy            = flag.String("sort", "sum", "Sort by [count|min|max|sum|avg]")
+		optCalltraceRegex    = flag.String("match-ct", ".*", "Regex to match calltrace with")
+		optInvCalltraceRegex = flag.String("inv-match-ct", "^$", "Regex to invertedly match calltrace with, that is, not-matching frames will be shown")
+		optColWidth          = flag.Int("col", tablewriter.MAX_ROW_WIDTH, "Column width")
 	)
 	flag.Parse()
 	if len(flag.Args()) != 1 {
@@ -162,19 +163,20 @@ func main() {
 		raw = append(raw, &rawInfo{kind, conn, desc, duration, calltrace})
 	}
 
-	// Filter callstack
-	re := regexp.MustCompile(*optCallstackRegex)
+	// Filter calltrace
+	re := regexp.MustCompile(*optCalltraceRegex)
+	reInv := regexp.MustCompile(*optInvCalltraceRegex)
 	for _, ri := range raw {
 		calltrace := make([]string, 0, len(ri.calltrace))
 		for _, f := range ri.calltrace {
-			if re.MatchString(f) {
+			if re.MatchString(f) && !reInv.MatchString(f) {
 				calltrace = append(calltrace, f)
 			}
 		}
 		ri.calltrace = calltrace
 	}
 
-	// Group by callstack
+	// Group by calltrace
 	m := make(map[string]*groupedInfo)
 	for _, ri := range raw {
 		key := getKeyForGroupedInfoMap(*ri, *optGroupBy)
