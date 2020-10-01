@@ -53,30 +53,24 @@ func (s *groupedInfoSorter) Len() int           { return len(s.gis) }
 func (s *groupedInfoSorter) Swap(i, j int)      { s.gis[i], s.gis[j] = s.gis[j], s.gis[i] }
 func (s *groupedInfoSorter) Less(i, j int) bool { return s.by(s.gis[i], s.gis[j]) }
 
-func getKeyForGroupedInfoMap(ri rawInfo, opt string) string {
-	switch opt {
-	case "fullct":
-		return strings.Join(ri.calltrace, "")
-	case "fullct+kind":
-		return strings.Join(append(ri.calltrace, ri.kind), "")
-	case "topct+kind":
-		return strings.Join([]string{ri.calltrace[0], ri.kind}, "")
-	default: // topct
-		return strings.Join([]string{ri.calltrace[0]}, "")
-	}
-}
+func getKeyForGroupedInfoMap(ri rawInfo, opt map[string]struct{}) string {
+	keys := []string{}
 
-func getDesc(ri rawInfo) string {
-	switch ri.kind {
-	case "Commit":
-		return "COMMIT"
-	case "Begin":
-		return "BEGIN"
-	case "Rollback":
-		return "ROLLBACK"
-	default:
-		return ri.desc
+	if _, ok := opt["fullct"]; ok {
+		keys = append(keys, ri.calltrace...)
+	} else { // topct
+		keys = append(keys, ri.calltrace[0])
 	}
+
+	if _, ok := opt["kind"]; ok {
+		keys = append(keys, ri.kind)
+	}
+
+	if _, ok := opt["desc"]; ok {
+		keys = append(keys, ri.desc)
+	}
+
+	return strings.Join(keys, ";")
 }
 
 func getShortFilePath(src string) string {
@@ -85,7 +79,7 @@ func getShortFilePath(src string) string {
 
 func main() {
 	var (
-		optGroupBy           = flag.String("group", "top", "Group by [topct|topct+kind|fullct|fullct+kind]")
+		optGroupBySrc        = flag.String("group", "topct+desc", "Group by [topct|fullct]+[kind]+[desc]")
 		optSortBy            = flag.String("sort", "sum", "Sort by [count|min|max|sum|avg]")
 		optCalltraceRegex    = flag.String("match-ct", ".*", "Regex to match calltrace with")
 		optInvCalltraceRegex = flag.String("inv-match-ct", "^$", "Regex to invertedly match calltrace with, that is, not-matching frames will be shown")
@@ -98,6 +92,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	optGroupBy := make(map[string]struct{})
+	for _, s := range strings.Split(*optGroupBySrc, "+") {
+		s := strings.ToLower(s)
+		switch s {
+		case "topct":
+			if _, ok := optGroupBy["fullct"]; ok {
+				log.Fatalf("Invalid option: topct and fullct cannot be chosen at the same time")
+			}
+		case "fullct":
+			if _, ok := optGroupBy["topct"]; ok {
+				log.Fatalf("Invalid option: topct and fullct cannot be chosen at the same time")
+			}
+		}
+		optGroupBy[s] = struct{}{}
+	}
+
+	// Open input file
 	inFileName := flag.Arg(0)
 	infile, err := os.Open(inFileName)
 	if err != nil {
@@ -109,8 +120,9 @@ func main() {
 	}
 	r := bufio.NewReader(zr)
 
+	// Get raw data
+	// input format: kind\000conn\000desc\000duration\000CSF0\000CSF1\000...CSFn\000\000
 	raw := make([]*rawInfo, 0)
-	// format: kind\000conn\000desc\000duration\000CSF0\000CSF1\000...CSFn\000\000
 	for {
 		// kind
 		kind, err := r.ReadString(0x00)
@@ -132,6 +144,14 @@ func main() {
 			break
 		}
 		desc = desc[:len(desc)-1] // Discard null
+		switch kind {
+		case "Commit":
+			desc = "COMMIT"
+		case "Begin":
+			desc = "BEGIN"
+		case "Rollback":
+			desc = "ROLLBACK"
+		}
 
 		// duration
 		durationInNanoStr, err := r.ReadString(0x00)
@@ -185,14 +205,13 @@ func main() {
 	// Group by calltrace
 	m := make(map[string]*groupedInfo)
 	for _, ri := range raw {
-		key := getKeyForGroupedInfoMap(*ri, *optGroupBy)
+		key := getKeyForGroupedInfoMap(*ri, optGroupBy)
 		d := ri.duration.Nanoseconds()
-		desc := getDesc(*ri)
 		if gi, ok := m[key]; ok {
 			gi.count++
 			gi.kind[ri.kind[0:2]] = struct{}{}
-			if desc != "" {
-				gi.desc[desc] = struct{}{}
+			if ri.desc != "" {
+				gi.desc[ri.desc] = struct{}{}
 			}
 
 			gi.sumDuration += d
@@ -206,8 +225,8 @@ func main() {
 			mKind := make(map[string]struct{})
 			mDesc := make(map[string]struct{})
 			mKind[ri.kind[0:2]] = struct{}{}
-			if desc != "" {
-				mDesc[desc] = struct{}{}
+			if ri.desc != "" {
+				mDesc[ri.desc] = struct{}{}
 			}
 			m[key] = &groupedInfo{
 				kind:        mKind,
@@ -264,15 +283,14 @@ func main() {
 
 		// Format calltrace
 		traces := []string{}
-		switch *optGroupBy {
-		case "fullct", "fullct+kind":
+		if _, ok := optGroupBy["fullct"]; ok {
 			for i, f := range gi.calltrace {
 				if *optShortCalltrace {
 					f = getShortFilePath(f)
 				}
 				traces = append(traces, fmt.Sprintf("%02d:%s", i, f))
 			}
-		default: // topct, topct+kind
+		} else {
 			f := gi.calltrace[0]
 			if *optShortCalltrace {
 				f = getShortFilePath(f)
