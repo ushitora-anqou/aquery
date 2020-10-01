@@ -54,9 +54,13 @@ func (s *groupedInfoSorter) Less(i, j int) bool { return s.by(s.gis[i], s.gis[j]
 
 func getKeyForGroupedInfoMap(ri rawInfo, opt string) string {
 	switch opt {
-	case "full":
+	case "fullct":
+		return strings.Join(ri.calltrace, "")
+	case "fullct+kind":
 		return strings.Join(append(ri.calltrace, ri.kind), "")
-	default: // top
+	case "topct+kind":
+		return strings.Join([]string{ri.calltrace[0], ri.kind}, "")
+	default: // topct
 		return strings.Join([]string{ri.calltrace[0]}, "")
 	}
 }
@@ -76,7 +80,7 @@ func getDesc(ri rawInfo) string {
 
 func main() {
 	var (
-		optGroupBy        = flag.String("group", "top", "Group by [top|full] of calltrace")
+		optGroupBy        = flag.String("group", "top", "Group by [topct|topct+kind|fullct|fullct+kind]")
 		optSortBy         = flag.String("sort", "sum", "Sort by [count|min|max|sum|avg]")
 		optCallstackRegex = flag.String("match-callstack", ".*", "Regex to match callstack with")
 		optColWidth       = flag.Int("col", tablewriter.MAX_ROW_WIDTH, "Column width")
@@ -253,11 +257,15 @@ func main() {
 		// Format calltrace
 		traces := []string{}
 		switch *optGroupBy {
-		case "full":
+		case "fullct":
 			for i, f := range gi.calltrace {
 				traces = append(traces, fmt.Sprintf("%02d:%s", i, f))
 			}
-		default: // top
+		case "fullct+kind":
+			for i, f := range gi.calltrace {
+				traces = append(traces, fmt.Sprintf("%02d:%s", i, f))
+			}
+		default: // topct, topct+kind
 			traces = append(traces, gi.calltrace[0])
 		}
 
