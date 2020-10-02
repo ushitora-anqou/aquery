@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,12 +24,64 @@ type rawInfo struct {
 	calltrace        []string
 }
 
+type stat struct {
+	cnt                                        int
+	min, max, sum, avg, dev, std, p1, p50, p99 float64
+}
+
+// Thanks to: https://github.com/tkuchiki/alp
+func percentRank(l int, n int) int {
+	pLen := (l * n / 100) - 1
+	if pLen < 0 {
+		pLen = 0
+	}
+
+	return pLen
+}
+
+func NewStat(src []float64) (s stat) {
+	if len(src) == 0 {
+		return
+	}
+
+	s.cnt = len(src)
+	s.min, s.max = src[0], src[0]
+	for _, v := range src {
+		if v < s.min {
+			s.min = v
+		}
+		if s.max < v {
+			s.max = v
+		}
+		s.sum += v
+	}
+	s.avg = s.sum / float64(s.cnt)
+	for _, v := range src {
+		s.dev += (v - s.avg) * (v - s.avg)
+	}
+	s.dev = s.dev / float64(s.cnt)
+	s.std = math.Sqrt(s.dev)
+
+	tmp := make([]float64, s.cnt)
+	copy(tmp, src)
+	sort.Sort(float64By(tmp))
+	s.p1 = tmp[percentRank(s.cnt, 1)]
+	s.p50 = tmp[percentRank(s.cnt, 50)]
+	s.p99 = tmp[percentRank(s.cnt, 99)]
+
+	return
+}
+
 type groupedInfo struct {
 	calltrace []string
 
-	kind, desc                            map[string]struct{}
-	count                                 int64
-	minDuration, maxDuration, sumDuration int64 // in nanosecond
+	kind, desc   map[string]struct{}
+	durations    []float64
+	durationStat *stat
+}
+
+func nano2sec(src int64) float64 {
+	return float64(src) / 1000000000.0
 }
 
 type stringBy []string
@@ -36,6 +89,12 @@ type stringBy []string
 func (b stringBy) Len() int           { return len(b) }
 func (b stringBy) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b stringBy) Less(i, j int) bool { return b[i] < b[j] }
+
+type float64By []float64
+
+func (b float64By) Len() int           { return len(b) }
+func (b float64By) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b float64By) Less(i, j int) bool { return b[i] < b[j] }
 
 type by func(gi1, gi2 *groupedInfo) bool
 
@@ -208,19 +267,12 @@ func main() {
 		key := getKeyForGroupedInfoMap(*ri, optGroupBy)
 		d := ri.duration.Nanoseconds()
 		if gi, ok := m[key]; ok {
-			gi.count++
 			gi.kind[ri.kind[0:2]] = struct{}{}
 			if ri.desc != "" {
 				gi.desc[ri.desc] = struct{}{}
 			}
 
-			gi.sumDuration += d
-			if d < gi.minDuration {
-				gi.minDuration = d
-			}
-			if gi.maxDuration < d {
-				gi.maxDuration = d
-			}
+			gi.durations = append(gi.durations, nano2sec(d))
 		} else {
 			mKind := make(map[string]struct{})
 			mDesc := make(map[string]struct{})
@@ -229,15 +281,18 @@ func main() {
 				mDesc[ri.desc] = struct{}{}
 			}
 			m[key] = &groupedInfo{
-				kind:        mKind,
-				desc:        mDesc,
-				calltrace:   ri.calltrace,
-				count:       1,
-				sumDuration: d,
-				minDuration: d,
-				maxDuration: d,
+				kind:      mKind,
+				desc:      mDesc,
+				calltrace: ri.calltrace,
+				durations: []float64{nano2sec(d)},
 			}
 		}
+	}
+
+	// Calculate stat
+	for _, gi := range m {
+		s := NewStat(gi.durations)
+		gi.durationStat = &s
 	}
 
 	// Sort
@@ -248,23 +303,29 @@ func main() {
 	by(func(gi1, gi2 *groupedInfo) bool {
 		switch strings.ToLower(*optSortBy) {
 		case "count":
-			return gi1.count > gi2.count
+			return gi1.durationStat.cnt > gi2.durationStat.cnt
 		case "min":
-			return gi1.minDuration > gi2.minDuration
+			return gi1.durationStat.min > gi2.durationStat.min
 		case "max":
-			return gi1.maxDuration > gi2.maxDuration
-		case "sum":
-			return gi1.sumDuration > gi2.sumDuration
+			return gi1.durationStat.max > gi2.durationStat.max
 		case "avg":
-			return gi1.sumDuration/gi1.count > gi2.sumDuration/gi2.count
+			return gi1.durationStat.avg > gi2.durationStat.avg
+		case "std":
+			return gi1.durationStat.std > gi2.durationStat.std
+		case "p1":
+			return gi1.durationStat.p1 > gi2.durationStat.p1
+		case "p50":
+			return gi1.durationStat.p50 > gi2.durationStat.p50
+		case "p99":
+			return gi1.durationStat.p99 > gi2.durationStat.p99
 		default: // sum
-			return gi1.sumDuration > gi2.sumDuration
+			return gi1.durationStat.sum > gi2.durationStat.sum
 		}
 	}).Sort(mSlice)
 
 	// Print
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"COUNT", "MIN", "MAX", "SUM", "AVG", "K", "CALLTRACE", "DESC"})
+	table.SetHeader([]string{"COUNT", "MIN", "MAX", "SUM", "AVG", "P1", "P50", "P99", "STD", "K", "CALLTRACE", "DESC"})
 	table.SetColWidth(*optColWidth)
 	for _, gi := range mSlice {
 		// Format kind
@@ -298,12 +359,17 @@ func main() {
 			traces = append(traces, f)
 		}
 
+		s := gi.durationStat
 		table.Append([]string{
-			fmt.Sprint(gi.count),
-			fmt.Sprintf("%.3f", float64(gi.minDuration)/1000000000.0),
-			fmt.Sprintf("%.3f", float64(gi.maxDuration)/1000000000.0),
-			fmt.Sprintf("%.3f", float64(gi.sumDuration)/1000000000.0),
-			fmt.Sprintf("%.3f", float64(gi.sumDuration/gi.count)/1000000000.0),
+			fmt.Sprint(s.cnt),
+			fmt.Sprintf("%.3f", s.min),
+			fmt.Sprintf("%.3f", s.max),
+			fmt.Sprintf("%.3f", s.sum),
+			fmt.Sprintf("%.3f", s.avg),
+			fmt.Sprintf("%.3f", s.p1),
+			fmt.Sprintf("%.3f", s.p50),
+			fmt.Sprintf("%.3f", s.p99),
+			fmt.Sprintf("%.3f", s.std),
 			strings.Join(kind, ","),
 			strings.Join(traces, "\n"),
 			strings.Join(desc, "\n"),
