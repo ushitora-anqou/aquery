@@ -264,6 +264,9 @@ func main() {
 	// Group by calltrace
 	m := make(map[string]*groupedInfo)
 	for _, ri := range raw {
+		if len(ri.calltrace) == 0 {
+			continue
+		}
 		key := getKeyForGroupedInfoMap(*ri, optGroupBy)
 		d := ri.duration.Nanoseconds()
 		if gi, ok := m[key]; ok {
