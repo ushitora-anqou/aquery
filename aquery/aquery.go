@@ -265,6 +265,7 @@ func main() {
 	m := make(map[string]*groupedInfo)
 	for _, ri := range raw {
 		if len(ri.calltrace) == 0 {
+			print("DROPPED\n")
 			continue
 		}
 		key := getKeyForGroupedInfoMap(*ri, optGroupBy)
