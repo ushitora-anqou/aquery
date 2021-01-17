@@ -2,11 +2,13 @@
 
 Yet another slow query analyzer for Go.
 
+[Description in Japanese](https://anqou.net/teqblog/2020/10/go%E7%94%A8sql%E3%82%B9%E3%83%AD%E3%83%BC%E3%82%AF%E3%82%A8%E3%83%AA%E8%A7%A3%E6%9E%90%E3%83%84%E3%83%BC%E3%83%ABaquery%E3%82%92%E6%9B%B8%E3%81%84%E3%81%A6isucon10%E3%81%AE%E6%9C%AC%E9%81%B8%E3%81%AB%E5%87%BA%E3%81%9F%E3%82%89fail%E3%81%97%E3%81%9F/).
+
 ## Install
 
 Rewrite your code:
 
-```
+```go
 import "github.com/ushitora-anqou/aquery"
 
 func main() {
